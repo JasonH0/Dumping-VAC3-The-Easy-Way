@@ -1,0 +1,41 @@
+#!/bin/bash
+
+#The script will most likely break soon, because it uses a hardcoded offset, for the record, GDB should break on "ClientModuleMan"
+
+steampid="$1"
+
+if [ -z "$steampid"]; then
+    echo -e "\e[31mYou need to pass a PID of the steam process (lower number from the output of 'pidof steam')"
+    exit
+fi
+
+base_addr=`grep -m1 -ioP '[\da-f]+(?=-.+steamservice\.so)' /proc/$steampid/maps`
+
+echo steamservice.so base address: $base_addr
+
+vac_addr=$(printf "%X\n" $((0x$base_addr+0x612c3)))
+
+echo breakpoint address: $vac_addr
+
+sudo echo "Press enter after GDB finishes setting up the breakpoint"
+
+(echo "set logging file gdbtmp.log
+printf \"Dumping VAC Module!\"
+set logging overwrite on
+set logging redirect on
+set logging on
+printf \"dump binary memory %d.so 0x%x 0x%x\", \$i, \$edx, (\$edx+\$ecx)
+set logging off
+set logging redirect off
+set logging overwrite off
+source gdbtmp.log
+set \$i=(\$i+1)
+continue
+end"; cat) | sudo gdb -n -q -batch \
+     -ex "attach $steampid" \
+     -ex "set follow-fork-mode parent" \
+     -ex "set follow-exec-mode same" \
+     -ex "set \$i = 1" \
+     -ex "hbreak *0x$vac_addr" \
+     -ex "commands" \
+     -ex "continue"
